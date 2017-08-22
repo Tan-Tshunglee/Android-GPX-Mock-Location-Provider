@@ -56,13 +56,10 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 	private ServiceConnection connection;
 	private IPlaybackService service;
 	private EditText mEditText;
-
 	private EditText mEditTextDelay;
 
 	private String filepath;
-
 	private String delayTimeOnReplay = "";
-
 	private GpsPlaybackBroadcastReceiver receiver;
 
 	private int state;
@@ -125,7 +122,7 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 		} catch (Exception ie) {
 		}
 
-		super.onPause();
+		super.onStop();
 
 	}
 
