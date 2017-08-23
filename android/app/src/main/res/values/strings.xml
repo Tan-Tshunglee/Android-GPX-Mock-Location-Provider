@@ -12,5 +12,10 @@
     
     <string name="please_wait">Please Wait</string>
     <string name="loading_file">Loading GPX File</string>
-    
+    <string name="input_longitude">Input longitude</string>
+    <string name="input_latitude">Input latitude</string>
+    <string name="set_single_location">Set Single Location</string>
+    <string name="input_playback_delay_milliseconds">Input Playback Delay (milliseconds):</string>
+    <string name="service_not_connected">Service not connected!</string>
+
 </resources>

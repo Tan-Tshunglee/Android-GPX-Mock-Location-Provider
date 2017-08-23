@@ -73,22 +73,7 @@ public class SendLocationWorker extends Worker {
         loc.setAltitude(100.0);
 
 
-		// bk added
-		Method method;
-		try {
-			method = Location.class.getMethod("makeComplete", new Class[0]);
-			if (method != null)
-			{
-				try
-				{
-					method.invoke(loc, new Object[0]);
-				}
-				catch (Exception exception) { }
-			}
-		} catch (NoSuchMethodException e) {
-			e.printStackTrace();
-		}
-
+		loc.setTime(System.nanoTime());
 
 		Log.d("SendLocation", "Sending update for " + providerName);
 		mLocationManager.setTestProviderLocation(providerName, loc);

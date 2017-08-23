@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.twolinessoftware.android; 
+package com.twolinessoftware.android;
 
 interface IPlaybackService{
 
@@ -21,6 +21,11 @@ interface IPlaybackService{
 	
 	void stopService();
 	
-	int getState(); 
+	int getState();
+
+    /**
+     *
+     */
+	boolean setSingleLocation(double latitude, double longitude);
 	
 }

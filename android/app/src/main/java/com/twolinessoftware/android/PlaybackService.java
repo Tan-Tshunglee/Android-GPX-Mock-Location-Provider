@@ -15,6 +15,17 @@
  */
 package com.twolinessoftware.android;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -22,10 +33,12 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.location.Criteria;
+import android.location.Location;
 import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.support.annotation.IntDef;
 import android.util.Log;
 
 import com.twolinessoftware.android.framework.service.comms.gpx.GpxSaxParser;
@@ -34,14 +47,7 @@ import com.twolinessoftware.android.framework.service.comms.gpx.GpxTrackPoint;
 import com.twolinessoftware.android.framework.util.Logger;
 import com.vividsolutions.jts.geom.Coordinate;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStreamReader;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
+
 
 public class PlaybackService extends Service implements GpxSaxParserListener {
 
@@ -54,7 +60,10 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
     private ArrayList<GpxTrackPoint> pointList = new ArrayList<GpxTrackPoint>();
 
     public static final boolean CONTINUOUS = true;
-
+    // Define the list of accepted constants and declare the NavigationMode annotation
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef({RUNNING, STOPPED})
+    public @interface ServiceRunningState{}
     public static final int RUNNING = 0;
     public static final int STOPPED = 1;
 
@@ -69,7 +78,6 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
         public void startService(String file) throws RemoteException {
 
             broadcastStateChange(RUNNING);
-
             loadGpxFile(file);
 
         }
@@ -94,6 +102,26 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
             return state;
         }
 
+        @Override
+        public boolean setSingleLocation(double latitude, double longitude) throws RemoteException {
+            if(state == RUNNING) {
+                return false;
+            }
+
+            Location loc = new Location(PROVIDER_NAME);
+            loc.setAccuracy(50);
+            loc.setTime(System.currentTimeMillis());
+            loc.setElapsedRealtimeNanos(System.nanoTime());
+            loc.setLatitude(latitude);
+            loc.setLongitude(longitude);
+            loc.setAltitude(20);
+
+
+            mLocationManager.setTestProviderLocation(PROVIDER_NAME, loc);
+
+            return true;
+        }
+
     };
 
     private LocationManager mLocationManager;
@@ -102,6 +130,7 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
 
     private long firstGpsTime;
 
+    @ServiceRunningState
     private int state;
 
     private SendLocationWorkerQueue queue;
@@ -217,7 +246,9 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
     }
 
     private void setupTestProvider() {
-        mLocationManager.addTestProvider(PROVIDER_NAME, false, //requiresNetwork,
+        mLocationManager.addTestProvider(
+                PROVIDER_NAME, //mock provider name
+                false, //requiresNetwork,
                 false, // requiresSatellite,
                 false, // requiresCell,
                 false, // hasMonetaryCost,
@@ -227,7 +258,7 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
                 Criteria.POWER_LOW, // powerRequirement
                 Criteria.ACCURACY_FINE); // accuracy
 
-        mLocationManager.setTestProviderEnabled("gps", true);
+        mLocationManager.setTestProviderEnabled(PROVIDER_NAME, true);
     }
 
 
@@ -336,6 +367,8 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
             } else {
                 Log.e(LOG, "Invalid Time at Point:" + gpsPointTime + " delay from current time:" + delay);
             }
+        } else {
+            Log.v(LOG, "Not running, ignore new point");
         }
 
     }
@@ -378,7 +411,7 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
         sendBroadcast(i);
     }
 
-    private void broadcastStateChange(int newState) {
+    private void broadcastStateChange(@ServiceRunningState int newState) {
         state = newState;
         Intent i = new Intent(GpsPlaybackBroadcastReceiver.INTENT_BROADCAST);
         i.putExtra(GpsPlaybackBroadcastReceiver.INTENT_STATUS, GpsPlaybackBroadcastReceiver.Status.statusChange.toString());
