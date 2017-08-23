@@ -72,7 +72,6 @@
             android:layout_width="fill_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dip"
-            android:focusableInTouchMode="true"
             android:onClick="onClickStart"
             android:text="Start Playback"
             />

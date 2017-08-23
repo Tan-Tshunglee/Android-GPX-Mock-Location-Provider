@@ -35,9 +35,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.databinding.DataBindingUtil;
-import android.databinding.ViewDataBinding;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.Uri;
@@ -54,6 +51,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.ipaulpro.afilechooser.utils.FileUtils;
 import com.twolinessoftware.android.databinding.MainBinding;
 import com.twolinessoftware.android.framework.util.Logger;
 import com.twolinessoftware.android.model.Location;
@@ -62,7 +60,7 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 
 	private static final int REQUEST_FILE = 1;
 
-	private static final String LOGNAME = "SimulatedGPSProvider.MainActivity";
+	private static final String LOGNAME = "MainActivity";
 	private static final String APP_DATA_CACHE_FILENAME = "gpx_app_data_cache";
 	private static final String DEFAULT_PATH_TO_GPX_FILE = "/";
 
@@ -318,34 +316,37 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 		startActivityForResult(intent, REQUEST_FILE);
 	}
 
-	/*
-	 * "Start" button clicked
-	 */
-	public void startPlaybackService() {
+    /*
+     * "Start" button clicked
+     */
+    public void startPlaybackService() {
 
-		if (filepath == null) {
-			Toast.makeText(this, "No File Loaded", Toast.LENGTH_SHORT).show();
-			return;
-		}
-
-		if (delayTimeOnReplay == null) {
-			Toast.makeText(this, "No delay time specified", Toast.LENGTH_SHORT).show();
-			return;
-		}
+        if (TextUtils.isEmpty(filepath)) {
+            Toast.makeText(this, "No File Loaded", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
 
-		try {
-			if (service != null) {
-				service.startService(filepath);
-			}
+        if (TextUtils.isEmpty(delayTimeOnReplay)) {
+            Toast.makeText(this, "No delay time specified", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-		} catch (RemoteException e) {
-		}
+        try {
+            long delayTime = Long.valueOf(delayTimeOnReplay);
 
-		Intent i = new Intent(getApplicationContext(), PlaybackService.class);
-		i.putExtra("delayTimeOnReplay", delayTimeOnReplay);
-		startService(i);
-	}
+            if (service != null) {
+                service.startService(filepath, delayTime);
+            }
+
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "Delay time number invalid.", Toast.LENGTH_SHORT).show();
+            e.printStackTrace();
+            return;
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+    }
 
 	public void stopPlaybackService() {
 
@@ -416,12 +417,11 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 			if (resultCode == RESULT_OK && data != null) {
 				// obtain the filename
 				Uri fileUri = data.getData();
-				if (fileUri != null) {
-					String filePath = fileUri.getPath();
-					if (filePath != null) {
-						mEditText.setText(filePath);
-						this.filepath = filePath;
-					}
+
+				String filePath = FileUtils.getPath(this, fileUri);
+				if (filePath != null) {
+					mEditText.setText(filePath);
+					this.filepath = filePath;
 				}
 			}
 			break;

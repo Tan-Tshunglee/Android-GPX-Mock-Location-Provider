@@ -36,8 +36,12 @@ android {
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-    testCompile 'junit:junit:4.12'
+
     compile 'com.android.support:appcompat-v7:22.+'
     compile 'com.android.support:support-annotations:22.+'
+
     compile 'com.vividsolutions:jts:1.13'
+    compile 'io.ticofab.androidgpxparser:parser:1.0.0'
+
+    testCompile 'junit:junit:4.12'
 }

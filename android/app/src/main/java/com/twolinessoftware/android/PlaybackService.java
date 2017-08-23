@@ -15,16 +15,17 @@
  */
 package com.twolinessoftware.android;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
+import java.util.List;
 
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -41,15 +42,20 @@ import android.os.RemoteException;
 import android.support.annotation.IntDef;
 import android.util.Log;
 
-import com.twolinessoftware.android.framework.service.comms.gpx.GpxSaxParser;
-import com.twolinessoftware.android.framework.service.comms.gpx.GpxSaxParserListener;
 import com.twolinessoftware.android.framework.service.comms.gpx.GpxTrackPoint;
 import com.twolinessoftware.android.framework.util.Logger;
 import com.vividsolutions.jts.geom.Coordinate;
 
+import org.xmlpull.v1.XmlPullParserException;
+
+import io.ticofab.androidgpxparser.parser.GPXParser;
+import io.ticofab.androidgpxparser.parser.domain.Gpx;
+import io.ticofab.androidgpxparser.parser.domain.WayPoint;
+
+import static java.lang.Thread.sleep;
 
 
-public class PlaybackService extends Service implements GpxSaxParserListener {
+public class PlaybackService extends Service {
 
     private NotificationManager mNM;
 
@@ -75,7 +81,7 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
 
 
         @Override
-        public void startService(String file) throws RemoteException {
+        public void startService(String file, long delayTIme) throws RemoteException {
 
             broadcastStateChange(RUNNING);
             loadGpxFile(file);
@@ -85,8 +91,6 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
         @Override
         public void stopService() throws RemoteException {
             mLocationManager.removeTestProvider(PROVIDER_NAME);
-
-            queue.reset();
 
             broadcastStateChange(STOPPED);
 
@@ -133,10 +137,6 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
     @ServiceRunningState
     private int state;
 
-    private SendLocationWorkerQueue queue;
-
-    private boolean processing;
-
     private ReadFileTask task;
 
     @Override
@@ -151,13 +151,9 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
 
         mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
-        queue = new SendLocationWorkerQueue();
-
         broadcastStateChange(STOPPED);
 
         setupTestProvider();
-
-        processing = false;
 
     }
 
@@ -174,8 +170,7 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
         }
 
         if (timeFromIntent != null && !"".equalsIgnoreCase(timeFromIntent)) {
-            long delayTimeOnReplay = Long.valueOf(timeFromIntent);
-            queue.start(delayTimeOnReplay);
+
         }
 
         // We want this service to continue running until it is explicitly
@@ -215,11 +210,6 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
 
     }
 
-
-    private void queueGpxPositions(String xml) {
-        GpxSaxParser parser = new GpxSaxParser(this);
-        parser.parse(xml);
-    }
 
     private void onGpsPlaybackStopped() {
 
@@ -311,68 +301,6 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
         return null;
     }
 
-
-    @Override
-    public void onGpxError(String message) {
-        broadcastError(message);
-    }
-
-
-    @Override
-    public void onGpxPoint(GpxTrackPoint item) {
-
-        long delay = System.currentTimeMillis() + 2000; // ms until the point should be displayed
-
-        long gpsPointTime = 0;
-
-        // Calculate the delay
-        if (item.getTime() != null) {
-            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-
-            try {
-                Date gpsDate = format.parse(item.getTime());
-                gpsPointTime = gpsDate.getTime();
-            } catch (ParseException e) {
-                Log.e(LOG, "Unable to parse time:" + item.getTime());
-            }
-
-            if (firstGpsTime == 0)
-                firstGpsTime = gpsPointTime;
-
-
-            if (startTimeOffset == 0)
-                startTimeOffset = System.currentTimeMillis();
-
-
-            delay = (gpsPointTime - firstGpsTime) + startTimeOffset;
-        }
-
-        if (lastPoint != null) {
-            item.setHeading(calculateHeadingFromPreviousPoint(lastPoint, item));
-            item.setSpeed(calculateSpeedFromPreviousPoint(lastPoint, item));
-        } else {
-            item.setHeading(0.0);
-            item.setSpeed(15.0);
-        }
-
-        lastPoint = item;
-
-        pointList.add(item);
-        if (state == RUNNING) {
-            if (delay > 0) {
-                Log.d(LOG, "Sending Point in:" + (delay - System.currentTimeMillis()) + "ms");
-
-                SendLocationWorker worker = new SendLocationWorker(mLocationManager, item, PROVIDER_NAME, delay);
-                queue.addToQueue(worker);
-            } else {
-                Log.e(LOG, "Invalid Time at Point:" + gpsPointTime + " delay from current time:" + delay);
-            }
-        } else {
-            Log.v(LOG, "Not running, ignore new point");
-        }
-
-    }
-
     private double calculateHeadingFromPreviousPoint(GpxTrackPoint currentPoint, GpxTrackPoint lastPoint) {
 
         double angleBetweenPoints = Math.atan2((lastPoint.getLon() - currentPoint.getLon()), (lastPoint.getLat() - currentPoint.getLat()));
@@ -386,16 +314,6 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
         double distance = startCoordinate.distance(endCoordinate) * 100000;
         return distance;
 
-    }
-
-    @Override
-    public void onGpxStart() {
-        // Start Parsing
-    }
-
-    @Override
-    public void onGpxEnd() {
-        // End Parsing
     }
 
     private void broadcastStatus(GpsPlaybackBroadcastReceiver.Status status) {
@@ -438,14 +356,27 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
 
             // Reset the existing values
             firstGpsTime = 0;
-
             startTimeOffset = 0;
 
-            String xml = loadFile(file);
 
             publishProgress(1);
 
-            queueGpxPositions(xml);
+            Gpx gpx = null;
+            try (BufferedInputStream fileInputStream = new BufferedInputStream(new FileInputStream(file)) ) {
+                GPXParser gpxParser = new GPXParser(); // consider injection
+                gpx = gpxParser.parse(fileInputStream);
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (XmlPullParserException e) {
+                e.printStackTrace();
+            }
+
+            if(gpx != null) {
+                List<WayPoint> points = gpx.getWayPoints();
+                replayWayPoints(points);
+            }
 
             return null;
         }
@@ -460,6 +391,35 @@ public class PlaybackService extends Service implements GpxSaxParserListener {
 
         }
 
+    }
+
+    private void replayWayPoints(List<WayPoint> points) {
+        for(WayPoint point : points) {
+            updateWayPointToLocationProvider(point);
+            try {
+                sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        onGpsPlaybackStopped();
+    }
+
+    private void updateWayPointToLocationProvider(WayPoint point) {
+        Location loc = new Location(PROVIDER_NAME);
+        loc.setLatitude(point.getLatitude());
+        loc.setLongitude(point.getLongitude());
+
+        loc.setTime(System.currentTimeMillis());
+        loc.setElapsedRealtimeNanos(System.nanoTime());
+
+        loc.setAccuracy(10.0f);
+        loc.setAltitude(100.0);
+
+
+
+        Log.d("SendLocation", "Sending update for " + PROVIDER_NAME);
+        mLocationManager.setTestProviderLocation(PROVIDER_NAME, loc);
     }
 
 
