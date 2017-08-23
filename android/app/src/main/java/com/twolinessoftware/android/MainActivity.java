@@ -327,10 +327,10 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
         }
 
 
-        if (TextUtils.isEmpty(delayTimeOnReplay)) {
-            Toast.makeText(this, "No delay time specified", Toast.LENGTH_SHORT).show();
-            return;
-        }
+		if (TextUtils.isEmpty(delayTimeOnReplay)) {
+			delayTimeOnReplay = "0";
+			mEditTextDelay.setText(delayTimeOnReplay);
+		}
 
         try {
             long delayTime = Long.valueOf(delayTimeOnReplay);
@@ -431,13 +431,11 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 	@Override
 	public void onFileLoadStarted() {
 		Logger.d(LOGNAME, "File loading started");
-		showProgressDialog();
 	}
 
 	@Override
 	public void onFileLoadFinished() {
 		Logger.d(LOGNAME, "File loading finished");
-		hideProgressDialog();
 	}
 
 	@Override

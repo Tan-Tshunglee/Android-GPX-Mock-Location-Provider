@@ -83,22 +83,24 @@ public class PlaybackService extends Service {
         @Override
         public void startService(String file, long delayTIme) throws RemoteException {
 
+            mLocationManager.setTestProviderEnabled(PROVIDER_NAME, true);
+            broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileLoadStarted);
+
+            // Display a notification about us starting.  We put an icon in the status bar.
+            showNotification();
+
             broadcastStateChange(RUNNING);
             loadGpxFile(file);
+
 
         }
 
         @Override
         public void stopService() throws RemoteException {
-            mLocationManager.removeTestProvider(PROVIDER_NAME);
-
             broadcastStateChange(STOPPED);
-
             cancelExistingTaskIfNecessary();
-
             onGpsPlaybackStopped();
 
-            stopSelf();
         }
 
         @Override
@@ -197,15 +199,12 @@ public class PlaybackService extends Service {
     private void loadGpxFile(String file) {
         if (file != null) {
 
-            broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileLoadStarted);
-
             cancelExistingTaskIfNecessary();
 
             task = new ReadFileTask(file);
             task.execute(null, null);
 
-            // Display a notification about us starting.  We put an icon in the status bar.
-            showNotification();
+
         }
 
     }
@@ -229,9 +228,6 @@ public class PlaybackService extends Service {
             mLocationManager.setTestProviderEnabled(PROVIDER_NAME, false);
             mLocationManager.clearTestProviderEnabled(PROVIDER_NAME);
             mLocationManager.clearTestProviderLocation(PROVIDER_NAME);
-
-            mLocationManager.removeTestProvider(PROVIDER_NAME);
-
         }
     }
 
@@ -247,8 +243,6 @@ public class PlaybackService extends Service {
                 false, // upportsBearing,
                 Criteria.POWER_LOW, // powerRequirement
                 Criteria.ACCURACY_FINE); // accuracy
-
-        mLocationManager.setTestProviderEnabled(PROVIDER_NAME, true);
     }
 
 
