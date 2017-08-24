@@ -57,15 +57,17 @@ import static java.lang.Thread.sleep;
 
 public class PlaybackService extends Service {
 
-    private NotificationManager mNM;
+    private NotificationManager mNotificationManager;
 
     private static final String LOG = PlaybackService.class.getSimpleName();
 
-    private static final int NOTIFICATION = 1;
+    private static final int NOTIFICATION_ID = 1;
 
     private ArrayList<GpxTrackPoint> pointList = new ArrayList<GpxTrackPoint>();
 
     public static final boolean CONTINUOUS = true;
+    private boolean mMockLocationProviderAdded;
+
     // Define the list of accepted constants and declare the NavigationMode annotation
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({RUNNING, STOPPED})
@@ -74,8 +76,6 @@ public class PlaybackService extends Service {
     public static final int STOPPED = 1;
 
     private static final String PROVIDER_NAME = LocationManager.GPS_PROVIDER;
-
-    private GpxTrackPoint lastPoint;
 
     private final IPlaybackService.Stub mBinder = new IPlaybackService.Stub() {
 
@@ -149,7 +149,7 @@ public class PlaybackService extends Service {
     @Override
     public void onCreate() {
 
-        mNM = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        mNotificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
         mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
@@ -215,7 +215,7 @@ public class PlaybackService extends Service {
         broadcastStateChange(STOPPED);
 
         // Cancel the persistent notification.
-        mNM.cancel(NOTIFICATION);
+        mNotificationManager.cancel(NOTIFICATION_ID);
 
         disableGpsProvider();
 
@@ -232,17 +232,27 @@ public class PlaybackService extends Service {
     }
 
     private void setupTestProvider() {
-        mLocationManager.addTestProvider(
-                PROVIDER_NAME, //mock provider name
-                false, //requiresNetwork,
-                false, // requiresSatellite,
-                false, // requiresCell,
-                false, // hasMonetaryCost,
-                false, // supportsAltitude,
-                false, // supportsSpeed, s
-                false, // upportsBearing,
-                Criteria.POWER_LOW, // powerRequirement
-                Criteria.ACCURACY_FINE); // accuracy
+
+        List<String> providers = mLocationManager.getAllProviders();
+
+        try {
+            mLocationManager.addTestProvider(
+                    PROVIDER_NAME, //mock provider name
+                    false, //requiresNetwork,
+                    false, // requiresSatellite,
+                    false, // requiresCell,
+                    false, // hasMonetaryCost,
+                    false, // supportsAltitude,
+                    false, // supportsSpeed, s
+                    false, // upportsBearing,
+                    Criteria.POWER_LOW, // powerRequirement
+                    Criteria.ACCURACY_FINE); // accuracy
+
+            mMockLocationProviderAdded = true;
+        } catch (SecurityException e) {
+            mMockLocationProviderAdded = false;
+            e.printStackTrace();
+        }
     }
 
 
@@ -250,22 +260,20 @@ public class PlaybackService extends Service {
      * Show a notification while this service is running.
      */
     private void showNotification() {
-        // In this sample, we'll use the same text for the ticker and the expanded notification
-        CharSequence text = "GPX Playback Running";
-
-        // Set the icon, scrolling text and timestamp
-        Notification notification = new Notification(R.drawable.ic_playback_running, text,
-                System.currentTimeMillis());
 
         // The PendingIntent to launch our activity if the user selects this notification
         PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
                 new Intent(this, MainActivity.class), 0);
 
-        // Set the info for the views that show in the notification panel.
-        notification.setLatestEventInfo(this, "GPX Playback Manager", text, contentIntent);
+        Notification noti = new Notification.Builder(this)
+                .setContentTitle(getString(R.string.gpx_playback_running))
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentIntent(contentIntent)
+                .build();
 
         // Send the notification.
-        mNM.notify(NOTIFICATION, notification);
+        mNotificationManager.notify(NOTIFICATION_ID, noti);
+
     }
 
     private String loadFile(String file) {
@@ -413,7 +421,13 @@ public class PlaybackService extends Service {
 
 
         Log.d("SendLocation", "Sending update for " + PROVIDER_NAME);
-        mLocationManager.setTestProviderLocation(PROVIDER_NAME, loc);
+        try {
+            mLocationManager.setTestProviderLocation(PROVIDER_NAME, loc);
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        } catch (IllegalStateException e) {
+            e.printStackTrace();
+        }
     }
 
 

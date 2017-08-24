@@ -22,9 +22,11 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Date;
-import java.util.regex.Pattern;
 
+import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AppOpsManager;
 import android.app.ProgressDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -34,14 +36,17 @@ import android.content.DialogInterface.OnCancelListener;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.databinding.DataBindingUtil;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.provider.Settings;
+import android.support.v4.app.ActivityCompat;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -78,19 +83,19 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 
 	private MainBinding mDataBinding;
 	private ProgressDialog progressDialog;
-	private TextView mLabelEditText;
 	private LocationManager mLocationManager;
 	private LocationListener mLocationListener = new LocationListener() {
+		@SuppressLint("DefaultLocale")
 		@Override
 		public void onLocationChanged(android.location.Location location) {
 
-			String timeText = (new Date()).toLocaleString();
 			mGeoResult.setText(
 					String.format(
-							"Lat:%f Lng:%f at %s",
+							"Lat:%f Lng:%f at %tT, Mocked:%b",
 							location.getLatitude(),
 							location.getLongitude(),
-							timeText
+							new Date(),
+							location.isFromMockProvider()
 					)
 			);
 		}
@@ -116,23 +121,39 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-		String pattern = Pattern.quote("!@#$%^&*(.\\Q\\E.../");
 
-		Logger.i(LOGNAME, pattern);
-//		setContentView(R.layout.main);
-		mDataBinding = DataBindingUtil.setContentView(this, R.layout.main);
-		mDataBinding.setLocation(new Location());
-		// test that mock locations are allowed so a more descriptive error
-		// message can be logged
-		if (Settings.Secure.getInt(getContentResolver(),
-				Settings.Secure.ALLOW_MOCK_LOCATION, 0) == 0) {
-			Toast.makeText(this, "MockLocations needs to be enabled",
-					Toast.LENGTH_SHORT).show();
-			finish();
+		boolean locationMockEnabled;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+			AppOpsManager opsManager = (AppOpsManager) getSystemService(APP_OPS_SERVICE);
+			locationMockEnabled = (
+					opsManager.checkOp(
+							AppOpsManager.OPSTR_MOCK_LOCATION,
+							android.os.Process.myUid(),
+							BuildConfig.APPLICATION_ID
+					) == AppOpsManager.MODE_ALLOWED
+			);
+		} else {
+			// test that mock locations are allowed so a more descriptive error
+			// message can be logged
+			//noinspection deprecation
+			locationMockEnabled = Settings.Secure.getInt(getContentResolver(),
+					Settings.Secure.ALLOW_MOCK_LOCATION, 0) == 1;
 		}
 
+		if (!locationMockEnabled) {
+			Toast.makeText(this, R.string.mock_setting_needs_to_be_enabled,
+					Toast.LENGTH_LONG).show();
+			finish();
+			return;
+		}
+
+		mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+
+		//		setContentView(R.layout.main);
+		mDataBinding = DataBindingUtil.setContentView(this, R.layout.main);
+		mDataBinding.setLocation(new Location());
+
 		mEditText = (EditText) findViewById(R.id.file_path);
-		mLabelEditText = (TextView) findViewById(R.id.label_edit_text_delay);
 		mEditTextDelay = (EditText) findViewById(R.id.editTextDelay);
 
 		mEditTextDelay.addTextChangedListener(new TextWatcher() {
@@ -152,7 +173,7 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 			}
 		});
 
-		mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+
 		mGeoResult = (TextView) findViewById(R.id.geoResult);
 
 	}
@@ -185,6 +206,20 @@ public class MainActivity extends Activity implements GpsPlaybackListener {
 	}
 
 	private void registerLocationProvider() {
+		if (ActivityCompat.checkSelfPermission(this,
+				Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+				ActivityCompat.checkSelfPermission(
+						this, Manifest.permission.ACCESS_COARSE_LOCATION
+				) != PackageManager.PERMISSION_GRANTED) {
+			// TODO: Consider calling
+			//    ActivityCompat#requestPermissions
+			// here to request the missing permissions, and then overriding
+			//   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+			//                                          int[] grantResults)
+			// to handle the case where the user grants the permission. See the documentation
+			// for ActivityCompat#requestPermissions for more details.
+			return;
+		}
 		mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, mLocationListener, getMainLooper());
 	}
 

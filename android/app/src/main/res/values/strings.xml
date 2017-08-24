@@ -17,5 +17,7 @@
     <string name="set_single_location">Set Single Location</string>
     <string name="input_playback_delay_milliseconds">Input Playback Delay (milliseconds):</string>
     <string name="service_not_connected">Service not connected!</string>
+    <string name="mock_setting_needs_to_be_enabled">MockLocations needs to be enabled</string>
+    <string name="gpx_playback_running">GPX Playback Running</string>
 
 </resources>
