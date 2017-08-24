@@ -40,6 +40,7 @@ import android.os.AsyncTask;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.support.annotation.IntDef;
+import android.support.annotation.NonNull;
 import android.util.Log;
 
 import com.twolinessoftware.android.framework.service.comms.gpx.GpxTrackPoint;
@@ -50,9 +51,11 @@ import org.xmlpull.v1.XmlPullParserException;
 
 import io.ticofab.androidgpxparser.parser.GPXParser;
 import io.ticofab.androidgpxparser.parser.domain.Gpx;
+import io.ticofab.androidgpxparser.parser.domain.Route;
+import io.ticofab.androidgpxparser.parser.domain.Track;
+import io.ticofab.androidgpxparser.parser.domain.TrackPoint;
+import io.ticofab.androidgpxparser.parser.domain.TrackSegment;
 import io.ticofab.androidgpxparser.parser.domain.WayPoint;
-
-import static java.lang.Thread.sleep;
 
 
 public class PlaybackService extends Service {
@@ -67,6 +70,7 @@ public class PlaybackService extends Service {
 
     public static final boolean CONTINUOUS = true;
     private boolean mMockLocationProviderAdded;
+    private LocationMockPlayer mLocationMockPlayer;
 
     // Define the list of accepted constants and declare the NavigationMode annotation
     @Retention(RetentionPolicy.SOURCE)
@@ -87,7 +91,7 @@ public class PlaybackService extends Service {
             broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileLoadStarted);
 
             // Display a notification about us starting.  We put an icon in the status bar.
-            showNotification();
+            startForegroundService();
 
             broadcastStateChange(RUNNING);
             loadGpxFile(file);
@@ -99,8 +103,9 @@ public class PlaybackService extends Service {
         public void stopService() throws RemoteException {
             broadcastStateChange(STOPPED);
             cancelExistingTaskIfNecessary();
-            onGpsPlaybackStopped();
-
+            if(!mLocationMockPlayer.stopPlay()) {
+                onGpsPlaybackStopped();
+            }
         }
 
         @Override
@@ -157,6 +162,25 @@ public class PlaybackService extends Service {
 
         setupTestProvider();
 
+        mLocationMockPlayer = LocationMockPlayer.singleInstance(mLocationManager);
+        mLocationMockPlayer.setPlayCallBack(new LocationPlayCallback() {
+
+            @Override
+            public void onStart() {
+
+            }
+
+            @Override
+            public void onError() {
+
+            }
+
+            @Override
+            public void onComplete() {
+                onGpsPlaybackStopped();
+            }
+        });
+
     }
 
     @Override
@@ -183,7 +207,10 @@ public class PlaybackService extends Service {
     @Override
     public void onDestroy() {
         Log.d(LOG, "Stopping Playback Service");
-
+        mLocationMockPlayer.setPlayCallBack(null);
+        if(mLocationMockPlayer.isPlaying()) {
+            mLocationMockPlayer.stopPlay();
+        }
     }
 
     private void cancelExistingTaskIfNecessary() {
@@ -214,8 +241,7 @@ public class PlaybackService extends Service {
 
         broadcastStateChange(STOPPED);
 
-        // Cancel the persistent notification.
-        mNotificationManager.cancel(NOTIFICATION_ID);
+        stopForeground(true);
 
         disableGpsProvider();
 
@@ -259,7 +285,7 @@ public class PlaybackService extends Service {
     /**
      * Show a notification while this service is running.
      */
-    private void showNotification() {
+    private void startForegroundService() {
 
         // The PendingIntent to launch our activity if the user selects this notification
         PendingIntent contentIntent = PendingIntent.getActivity(this, 0,
@@ -271,8 +297,7 @@ public class PlaybackService extends Service {
                 .setContentIntent(contentIntent)
                 .build();
 
-        // Send the notification.
-        mNotificationManager.notify(NOTIFICATION_ID, noti);
+        startForeground(NOTIFICATION_ID, noti);
 
     }
 
@@ -377,7 +402,10 @@ public class PlaybackService extends Service {
 
             if(gpx != null) {
                 List<WayPoint> points = gpx.getWayPoints();
+                List<Track> tracks = gpx.getTracks();
+                List<Route> routes = gpx.getRoutes();
                 replayWayPoints(points);
+                replayTracks(tracks);
             }
 
             return null;
@@ -395,16 +423,19 @@ public class PlaybackService extends Service {
 
     }
 
-    private void replayWayPoints(List<WayPoint> points) {
-        for(WayPoint point : points) {
-            updateWayPointToLocationProvider(point);
-            try {
-                sleep(1000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+    private void replayTracks(@NonNull List<Track> tracks) {
+        ArrayList<TrackPoint> allPoints = new ArrayList<>();
+        for(Track track: tracks) {
+            List<TrackSegment> segs = track.getTrackSegments();
+            for(TrackSegment seg: segs) {
+                allPoints.addAll(seg.getTrackPoints());
             }
         }
-        onGpsPlaybackStopped();
+        mLocationMockPlayer.replayWaypoints(allPoints);
+    }
+
+    private void replayWayPoints(@NonNull List<WayPoint> points) {
+        mLocationMockPlayer.replayWaypoints(points);
     }
 
     private void updateWayPointToLocationProvider(WayPoint point) {
