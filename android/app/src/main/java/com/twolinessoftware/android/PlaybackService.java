@@ -51,6 +51,7 @@ import org.xmlpull.v1.XmlPullParserException;
 
 import io.ticofab.androidgpxparser.parser.GPXParser;
 import io.ticofab.androidgpxparser.parser.domain.Gpx;
+import io.ticofab.androidgpxparser.parser.domain.Point;
 import io.ticofab.androidgpxparser.parser.domain.Route;
 import io.ticofab.androidgpxparser.parser.domain.Track;
 import io.ticofab.androidgpxparser.parser.domain.TrackPoint;
@@ -68,8 +69,6 @@ public class PlaybackService extends Service {
 
     private ArrayList<GpxTrackPoint> pointList = new ArrayList<GpxTrackPoint>();
 
-    public static final boolean CONTINUOUS = true;
-    private boolean mMockLocationProviderAdded;
     private LocationMockPlayer mLocationMockPlayer;
 
     // Define the list of accepted constants and declare the NavigationMode annotation
@@ -79,7 +78,6 @@ public class PlaybackService extends Service {
     public static final int RUNNING = 0;
     public static final int STOPPED = 1;
 
-    private static final String PROVIDER_NAME = LocationManager.GPS_PROVIDER;
 
     private final IPlaybackService.Stub mBinder = new IPlaybackService.Stub() {
 
@@ -87,7 +85,9 @@ public class PlaybackService extends Service {
         @Override
         public void startService(String file, long delayTIme) throws RemoteException {
 
-            mLocationManager.setTestProviderEnabled(PROVIDER_NAME, true);
+            mLocationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true);
+            mLocationManager.setTestProviderEnabled(LocationManager.NETWORK_PROVIDER, true);
+            mLocationManager.setTestProviderEnabled(LocationManager.PASSIVE_PROVIDER, true);
             broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileLoadStarted);
 
             // Display a notification about us starting.  We put an icon in the status bar.
@@ -119,17 +119,8 @@ public class PlaybackService extends Service {
                 return false;
             }
 
-            Location loc = new Location(PROVIDER_NAME);
-            loc.setAccuracy(50);
-            loc.setTime(System.currentTimeMillis());
-            loc.setElapsedRealtimeNanos(System.nanoTime());
-            loc.setLatitude(latitude);
-            loc.setLongitude(longitude);
-            loc.setAltitude(20);
-
-
-            mLocationManager.setTestProviderLocation(PROVIDER_NAME, loc);
-
+            WayPoint point = (WayPoint) new WayPoint.Builder().setLatitude(latitude).setLongitude(longitude).build();
+            setTestProviderLocation(point);
             return true;
         }
 
@@ -188,17 +179,6 @@ public class PlaybackService extends Service {
 
         Log.d(LOG, "Starting Playback Service");
 
-        String timeFromIntent = null;
-        try {
-            timeFromIntent = intent.getStringExtra("delayTimeOnReplay");
-        } catch (java.lang.NullPointerException npe) {
-            // suppress npe if delay time not available.
-        }
-
-        if (timeFromIntent != null && !"".equalsIgnoreCase(timeFromIntent)) {
-
-        }
-
         // We want this service to continue running until it is explicitly
         // stopped, so return sticky.
         return START_STICKY;
@@ -248,37 +228,47 @@ public class PlaybackService extends Service {
     }
 
     private void disableGpsProvider() {
+        String[] providers = new String[]{
+                LocationManager.GPS_PROVIDER,
+                LocationManager.NETWORK_PROVIDER
+        };
 
-        if (mLocationManager.getProvider(PROVIDER_NAME) != null) {
+        for(String provider : providers) {
+            if (mLocationManager.getProvider(provider) != null) {
 
-            mLocationManager.setTestProviderEnabled(PROVIDER_NAME, false);
-            mLocationManager.clearTestProviderEnabled(PROVIDER_NAME);
-            mLocationManager.clearTestProviderLocation(PROVIDER_NAME);
+                mLocationManager.setTestProviderEnabled(provider, false);
+                mLocationManager.clearTestProviderEnabled(provider);
+                mLocationManager.clearTestProviderLocation(provider);
+            }
         }
     }
 
     private void setupTestProvider() {
 
-        List<String> providers = mLocationManager.getAllProviders();
+        String[] providers = new String[]{
+                LocationManager.GPS_PROVIDER,
+                LocationManager.NETWORK_PROVIDER
+        };
 
-        try {
-            mLocationManager.addTestProvider(
-                    PROVIDER_NAME, //mock provider name
-                    false, //requiresNetwork,
-                    false, // requiresSatellite,
-                    false, // requiresCell,
-                    false, // hasMonetaryCost,
-                    false, // supportsAltitude,
-                    false, // supportsSpeed, s
-                    false, // upportsBearing,
-                    Criteria.POWER_LOW, // powerRequirement
-                    Criteria.ACCURACY_FINE); // accuracy
+        for(String provider : providers) {
+            try {
+                mLocationManager.addTestProvider(
+                        provider, //mock provider name
+                        false, // requiresNetwork,
+                        false, // requiresSatellite,
+                        false, // requiresCell,
+                        false, // hasMonetaryCost,
+                        false, // supportsAltitude,
+                        false, // supportsSpeed,
+                        false, // supportsBearing,
+                        Criteria.POWER_LOW, // powerRequirement
+                        Criteria.ACCURACY_FINE); // accuracy
 
-            mMockLocationProviderAdded = true;
-        } catch (SecurityException e) {
-            mMockLocationProviderAdded = false;
-            e.printStackTrace();
+            } catch (SecurityException e) {
+                e.printStackTrace();
+            }
         }
+
     }
 
 
@@ -392,11 +382,15 @@ public class PlaybackService extends Service {
             try (BufferedInputStream fileInputStream = new BufferedInputStream(new FileInputStream(file)) ) {
                 GPXParser gpxParser = new GPXParser(); // consider injection
                 gpx = gpxParser.parse(fileInputStream);
+                broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileLoadfinished);
             } catch (FileNotFoundException e) {
+                broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileError);
                 e.printStackTrace();
             } catch (IOException e) {
+                broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileError);
                 e.printStackTrace();
             } catch (XmlPullParserException e) {
+                broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileError);
                 e.printStackTrace();
             }
 
@@ -406,19 +400,11 @@ public class PlaybackService extends Service {
                 List<Route> routes = gpx.getRoutes();
                 replayWayPoints(points);
                 replayTracks(tracks);
+            } else {
+                onGpsPlaybackStopped();
             }
 
             return null;
-        }
-
-        @Override
-        protected void onProgressUpdate(Integer... progress) {
-            switch (progress[0]) {
-                case 1:
-                    broadcastStatus(GpsPlaybackBroadcastReceiver.Status.fileLoadfinished);
-                    break;
-            }
-
         }
 
     }
@@ -438,28 +424,36 @@ public class PlaybackService extends Service {
         mLocationMockPlayer.replayWaypoints(points);
     }
 
-    private void updateWayPointToLocationProvider(WayPoint point) {
-        Location loc = new Location(PROVIDER_NAME);
-        loc.setLatitude(point.getLatitude());
-        loc.setLongitude(point.getLongitude());
+    private void setTestProviderLocation(Point point) {
 
-        loc.setTime(System.currentTimeMillis());
-        loc.setElapsedRealtimeNanos(System.nanoTime());
+        String[] providers = new String[] {
+                LocationManager.GPS_PROVIDER,
+                LocationManager.NETWORK_PROVIDER
+        };
 
-        loc.setAccuracy(10.0f);
-        loc.setAltitude(100.0);
+        for(String provider : providers) {
+            Location loc = new Location(provider);
+            loc.setLatitude(point.getLatitude());
+            loc.setLongitude(point.getLongitude());
 
+            loc.setTime(System.currentTimeMillis());
+            loc.setElapsedRealtimeNanos(System.nanoTime());
 
+            loc.setAccuracy(10.0f);
+            loc.setAltitude(100.0);
 
-        Log.d("SendLocation", "Sending update for " + PROVIDER_NAME);
-        try {
-            mLocationManager.setTestProviderLocation(PROVIDER_NAME, loc);
-        } catch (SecurityException e) {
-            e.printStackTrace();
-        } catch (IllegalStateException e) {
-            e.printStackTrace();
+            Log.d("SendLocation", "Sending update for " + provider);
+            try {
+                mLocationManager.setTestProviderLocation(provider, loc);
+            } catch (SecurityException e) {
+                e.printStackTrace();
+            } catch (IllegalStateException e) {
+                e.printStackTrace();
+            }
         }
+
     }
+
 
 
 }
